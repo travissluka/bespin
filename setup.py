@@ -16,6 +16,7 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     install_requires=[
+        'numpy>=1.19',
         'netcdf4',
         'scipy',
         'xarray'
