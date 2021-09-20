@@ -33,3 +33,11 @@ def test_dimension_init_edges():
 def test_dimension_centers():
     d = Dimension(name='latitude', edges=[1, 3, 5])
     assert np.array_equal(d.bin_centers, np.array([2, 4]))
+
+
+def test_dimension_eq():
+    d1 = Dimension(name='latitude', resolution=90)
+
+    assert d1 == Dimension(name='latitude', edges=[-90, 0, 90])
+    assert d1 != Dimension(name='latitude', resolution=10)
+    assert d1 != Dimension(name='longitude', resolution=90)

@@ -9,7 +9,7 @@ TODO: The binning routines should be pulled out, and reworked better for
 multichannel input data.
 """
 
-from typing import Iterable, MutableMapping, List, Type, FrozenSet, List
+from typing import Iterable, MutableMapping, List, Type, FrozenSet
 from typing import Optional, Union
 
 import xarray as xr
@@ -27,6 +27,9 @@ class StatisticBase():
     A sub class should provide its own copy of calc(), merge(), and value()
     where applicable.
     """
+
+    # A list of statistics that need to be calculated before this statistic.
+    depends: List[str] = []
 
     def __new__(cls, *args, **kwargs) -> 'StatisticBase':
         if cls == StatisticBase:
@@ -53,6 +56,15 @@ class StatisticBase():
             f'Statistic class for "{self.type_}" does not have'
             f' a calc() method')
 
+    def merge(
+            self,
+            stat1: 'StatisticBase',
+            stat2: 'StatisticBase') -> np.ndarray:
+        """Calculate merged binned statistics."""
+        raise RuntimeError(
+            f'Statistic class for "{self.type_}" does not have'
+            f' a merge() method')
+
     def value(self) -> np.ndarray:
         """Get the binned stat value.
 
@@ -69,7 +81,8 @@ class StatisticBase():
     def var_name(self) -> str:
         """Get the variable name for the binning.
 
-        Form is of <diagnostic>.<type_>  or just <type_> if diagnostic is None.
+        Form is of <variable>.<diagnostic>.<type_>  or just <variable>.<type_>
+        if diagnostic is None.
         """
         return '.'.join([i for i in (
             self.variable,
@@ -151,10 +164,6 @@ class StatisticBase():
 
     def _get(self, type_: str) -> np.ndarray:
         """Get a different statistic from the same binned DataSet."""
-        if type_ == self.type_:
-            raise ValueError(
-                f'cannot call Statistic.Base_statistic() with same'
-                f' type "{type_}"')
         try:
             val = Statistic(
                 type_,
@@ -169,7 +178,7 @@ class StatisticBase():
 
 
 class Statistic():
-    """A factory/wrapper for the various statistics classes. """
+    """A factory/wrapper for the various statistics classes."""
 
     __classes: MutableMapping[str, Type[StatisticBase]] = {}
 
@@ -192,6 +201,9 @@ class Statistic():
             binned_data=self.binned_data,
             )
 
+    def __repr__(self) -> str:
+        return f'Statistic("{self._statistic.var_name}")'
+
     @classmethod
     def register(cls, class_: Type[StatisticBase]) -> None:
         name = str.lower(class_.__name__)
@@ -203,6 +215,11 @@ class Statistic():
     def types(cls) -> FrozenSet[str]:
         """Get the list of valid registered statistics."""
         return frozenset(cls.__classes.keys())
+
+    @property
+    def dependencies(self) -> List[str]:
+        """Get list of other statistics that must be calcuated before this."""
+        return self._statistic.depends
 
     def calc(
             self,
@@ -237,8 +254,37 @@ class Statistic():
             dims = ['None']
         self.binned_data.update({self._statistic.var_name: (dims, result)})
 
-    def merge(self, other: StatisticBase):
-        raise NotImplementedError()
+    def merge(self, stat1: 'Statistic', stat2: 'Statistic') -> None:
+        """Merge two statistics of the same type."""
+        # make sure everything is the correct type
+        if not self.equivalent(stat1) or not self.equivalent(stat2):
+            raise ValueError(
+                f'Attempting to merge statistics of different types:'
+                f' self {self} \n stat1 {stat1} \n stat2 {stat2}')
+
+        # make sure statistic has not yet been merged
+        if self._statistic.var_name in self.binned_data:
+            raise RuntimeError(
+                f"{self._statistic.var_name} has already been calculated.")
+
+        # merge
+        result = self._statistic.merge(stat1._statistic, stat2._statistic)
+
+        # add to the dataset
+        dims: Union[DatasetCoordinates, List[str]] = self.binned_data.coords
+        if len(dims) == 0:
+            dims = ['None']
+        self.binned_data.update({self._statistic.var_name: (dims, result)})
 
     def value(self) -> np.ndarray:
         return self._statistic.value()
+
+    def equivalent(self, other: 'Statistic') -> bool:
+        """Return True if two Statistic classes represent the same thing.
+
+        The statistic type, variable, and diagnostic are checked.
+        """
+        return (
+            self.type_ == other.type_ and
+            self.variable == other.variable and
+            self.diagnostic == other.diagnostic)

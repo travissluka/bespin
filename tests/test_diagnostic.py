@@ -20,3 +20,11 @@ def test_diagnostic_create_default():
 
 def test_diagnostic_create():
     Diagnostic('omb', statistics={'sum', 'sum2', 'min', 'max'})
+
+
+def test_diagnostic_eq():
+    d1 = Diagnostic('omb', statistics={'sum', 'sum2', 'min', 'max'})
+
+    assert d1 == Diagnostic('omb', statistics={'sum', 'sum2', 'min', 'max'})
+    assert d1 != Diagnostic('omf', statistics={'sum', 'sum2', 'min', 'max'})
+    assert d1 != Diagnostic('omb', statistics={'sum'})

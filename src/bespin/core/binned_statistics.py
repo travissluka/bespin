@@ -8,6 +8,7 @@ from typing import Iterable, Mapping, MutableMapping, Optional
 import xarray as xr
 from itertools import product
 import numpy as np
+import copy
 
 from bespin.core.statistic import Statistic
 from bespin.core.diagnostic import Diagnostic
@@ -42,7 +43,7 @@ class BinnedStatistics:
         You probably don't want to use this. Look at BinnedStats.read().
         """
         self.name = name
-        self.bins = bins
+        self.bins = tuple(bins)
         self.diagnostics = {d.name: d for d in diagnostics}
         self.variables: MutableMapping[str, Mapping[str, str]] = {}
         self._data = xr.Dataset(
@@ -52,6 +53,11 @@ class BinnedStatistics:
         bin_names = [b.name for b in self.bins]
         return f'BinnedStatistics("{self.name}"", bins={bin_names})'
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, BinnedStatistics):
+            return False
+        return self.equals(other)
+
     @classmethod
     def read(cls, filename: str) -> 'BinnedStatistics':
         """Read an existing binned statistics from a file."""
@@ -60,7 +66,7 @@ class BinnedStatistics:
         # TODO use the full set of global_attributes
         bs = BinnedStatistics(
             name=input_args['global_attributes']['binning'],
-            bins=input_args['bins'],
+            bins=tuple(input_args['bins']),
             diagnostics=input_args['diagnostics'],
             )
 
@@ -74,6 +80,18 @@ class BinnedStatistics:
 
         return bs
 
+    def equals(self, other: 'BinnedStatistics', tolerance=1e-14) -> bool:
+        """Test equality between two binned stats.
+
+        A tolerance provided in order to account for small rounding errors.
+        """
+        if not self.equivalent(other):
+            return False
+
+        diff = (other._data - self._data)/self._data
+        diff = diff.reduce(np.nanmean).reduce(np.abs)
+        return bool(np.all([v <= tolerance for v in diff.data_vars.values()]))
+
     def equivalent(self, other: 'BinnedStatistics') -> bool:
         """Return True if the shape of the diagnostics is the same.
 
@@ -81,15 +99,14 @@ class BinnedStatistics:
         types, and statistic types are all identical. The actual binned
         statistic values are allowed to differ.
         """
-        eq_bins = all([b[0] == b[1] for b in zip(self.bins, other.bins)])
-        eq_diags = all([b[0] == b[1] for b in zip(
-            self.diagnostics, other.diagnostics)])
         return (
             self.name == other.name and
-            eq_bins and
-            eq_diags and
+            self.bins == other.bins and
+            self.diagnostics == other.diagnostics and
             self.variables == other.variables and
-            self._data.equals(other._data))
+            bool(np.all([self._data.coords[c].equals(other._data.coords[c])
+                         for c in self._data.coords]))
+            )
 
     def get(
             self, *,
@@ -167,8 +184,12 @@ class BinnedStatistics:
                 return_data.update({db_name: (dims, val)})
         return return_data
 
-    def write(self, filename: str) -> None:
-        """Write the binned statistics to a file."""
+    def write(self, filename: str, overwrite: bool = False) -> None:
+        """Write the binned statistics to a file.
+
+        overwrite: If true, overwrite an existing file, otherwise and exception
+          will be thrown. (default: False)
+        """
         # TODO make sure binning has been run first!
 
         # TODO fill in the global attributes with real data.
@@ -188,7 +209,64 @@ class BinnedStatistics:
             bins=self.bins,
             diagnostics=self.diagnostics.values(),
             data=self._data,
+            overwrite=overwrite,
             )
+
+    def merge(
+            self,
+            other: 'BinnedStatistics',
+            ) -> 'BinnedStatistics':
+        """Merge two BinnedStatistics datasets.
+
+        A new BinnedStatistics will be returned. 'self' and 'other' will not be
+        modified. The operation will be nearly identical to if all the input
+        observations had been binned at the same time.
+
+        See also: merge()
+        """
+        # Create a new class to hold the results, copy over the xarray coords
+        merged = BinnedStatistics(
+            self.name, self.bins, self.diagnostics.values())
+        merged._data.coords.update(self._data.coords)
+
+        for var in self.variables:
+            merged.variables[var] = {}
+            # calculate the merged count
+            stat_class = [
+                Statistic(
+                    'count',
+                    variable=var,
+                    diagnostic=None,
+                    binned_data=d._data)
+                for d in [merged, self, other]
+            ]
+            stat_class[0].merge(*stat_class[1:3])
+
+            # calculate the merged stat for each diagnostic
+            for diag in self.diagnostics.values():
+                for stat in diag.statistics:
+                    stat_class = [
+                        Statistic(
+                            stat,
+                            variable=var,
+                            diagnostic=diag.name,
+                            binned_data=d._data)
+                        for d in [merged, self, other]
+                    ]
+                    stat_class[0].merge(*stat_class[1:3])
+
+        # TODO merge special attributes such as obs window start/end
+        # once those are actually populated
+
+        return merged
+
+    def concat(
+            self,
+            other: 'BinnedStatistics',
+            dim: str,
+            in_place=False,
+            ) -> 'BinnedStatistics':
+        raise NotImplementedError()
 
     def _bin_variable(self, variable: str, unbinned_data: xr.Dataset) -> None:
         # make sure variable does not already exist
@@ -248,3 +326,29 @@ class BinnedStatistics:
                     variable=variable,
                     diagnostic=diag,
                     binned_data=self._data).calc(self.bins, unbinned_data)
+
+
+def merge(binned_stats: Iterable[BinnedStatistics]) -> BinnedStatistics:
+    """Merge multiple BinnedStatistics into one.
+
+    binned_stats: a list of two or more BinnedStats.
+
+    See also: BinnedStatistics.merge()
+    """
+    # TODO do in-place merges to speed up?
+    itr = iter(binned_stats)
+    result = copy.deepcopy(next(itr))
+    for i in itr:
+        result = result.merge(i)
+    return result
+
+
+def concat(
+        binned_stats: Iterable[BinnedStatistics],
+        dim: str
+        ) -> BinnedStatistics:
+    itr = iter(binned_stats)
+    result = copy.deepcopy(next(itr))
+    for i in itr:
+        result.concat(i, dim=dim, in_place=True)
+    return result

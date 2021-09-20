@@ -8,6 +8,7 @@
 from typing import Iterable, List, Mapping, Any, MutableMapping, Tuple
 import netCDF4 as nc  # type: ignore
 import xarray as xr
+import os.path
 
 from bespin.core.dimension import Dimension
 from bespin.core.diagnostic import Diagnostic
@@ -33,10 +34,8 @@ def read(filename: str) -> Tuple[Mapping[str, Any], Mapping[str, xr.Dataset]]:
 
     # Bins
     bins: List[Dimension] = []
-    dims = root.dimensions
-    for dim in dims:
-        variable = root.groups['Bins'].variables[dim]
-        bins.append(Dimension(dim, edges=variable[:]))
+    for k, v in root.groups['Bins'].variables.items():
+        bins.append(Dimension(k, edges=v[:]))
         # TODO get attributes
     results['bins'] = bins
 
@@ -57,9 +56,12 @@ def write(
         bins: Iterable[Dimension],
         diagnostics: Iterable[Diagnostic],
         data: xr.Dataset,
+        overwrite: bool,
         ) -> None:
     """Write binned statistic to a file."""
     filename = _add_suffix(filename)
+    if not overwrite and os.path.exists(filename):
+        raise FileExistsError()
 
     # Diagnostics
     data.to_netcdf(filename, 'w', group='Diagnostics')

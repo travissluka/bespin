@@ -10,7 +10,7 @@ observations in various ways. Tools are provided to manipulate and combine
 those binned statistics and plot them.
 """
 
-from bespin.core.binned_statistics import BinnedStatistics
+from bespin.core.binned_statistics import BinnedStatistics, merge
 from bespin.core.diagnostic import Diagnostic
 from bespin.core.dimension import Dimension
 from bespin.core.statistic import Statistic
@@ -24,4 +24,5 @@ __all__ = [
     'Statistic',
     'core',
     'statistics',
+    'merge',
 ]

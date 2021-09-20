@@ -20,6 +20,8 @@ class Mean(StatisticBase):
     Requires `count` and `sum` to have already been calculated.
     """
 
+    depends = ['count', 'sum']
+
     def value(self) -> np.ndarray:
         with np.errstate(divide='ignore', invalid='ignore'):
             count = self._get('count')
@@ -28,10 +30,9 @@ class Mean(StatisticBase):
 
 
 class Variance(StatisticBase):
-    """Population variance of a bin.
+    """Population variance of a bin."""
 
-    Requires `count`, `sum`, and `sum2` to have already been calculated.
-    """
+    depends = ['count', 'sum', 'sum2']
 
     def value(self) -> np.ndarray:
         with np.errstate(divide='ignore', invalid='ignore'):
@@ -41,10 +42,9 @@ class Variance(StatisticBase):
 
 
 class StdDev(StatisticBase):
-    """Population standard deviation of a bin.
+    """Population standard deviation of a bin."""
 
-    Requires `count`, `sum`, and `sum2` to have already been calculated.
-    """
+    depends = ['count', 'sum', 'sum2']
 
     # assuming population standard deviation
     def value(self) -> np.ndarray:
@@ -52,10 +52,9 @@ class StdDev(StatisticBase):
 
 
 class RMSD(StatisticBase):
-    """Root mean square deviation of a bin.
+    """Root mean square deviation of a bin."""
 
-    Requires `count`, `sum`, and `sum2` to have already been calculated.
-    """
+    depends = ['count', 'sum', 'sum2']
 
     def value(self) -> np.ndarray:
         mean = self._get('mean')

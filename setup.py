@@ -19,9 +19,15 @@ setuptools.setup(
         'numpy>=1.19',
         'netcdf4',
         'scipy',
-        'xarray'
+        'xarray',
+        'click',
     ],
     package_dir={"": "src"},
     packages=setuptools.find_packages(where="src"),
     python_requires=">=3.7",
+    entry_points={
+        'console_scripts': [
+            'bespin=bespin.bin.bespin:cli',
+        ]
+    }
 )

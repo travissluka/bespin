@@ -7,6 +7,7 @@ import numpy as np
 import xarray as xr
 import pytest
 from itertools import product
+import copy
 
 import bespin as bn
 from bespin.core.binned_statistics import BinnedStatistics
@@ -37,6 +38,7 @@ def init_args(request):
         '2D': bins[0:2],
         }
     return {
+        'name': 'binning_name',
         'bins': _bins[request.param],
         'diagnostics':  diagnostics,
     }
@@ -81,7 +83,7 @@ def unbinned_data(request):
 @pytest.fixture
 def binned_stat(init_args, unbinned_data):
     """pre-generated binned data, for tests that need that."""
-    bs = BinnedStatistics('binning_name', **init_args)
+    bs = BinnedStatistics(**init_args)
     variables, data = unbinned_data
     for var in variables:
         bs._bin_variable(var, data)
@@ -91,15 +93,53 @@ def binned_stat(init_args, unbinned_data):
 # ------------------------------------------------------------------------------
 # ------------------------------------------------------------------------------
 def test_binned_statistics_init(init_args):
-    BinnedStatistics('binning_name', **init_args)
+    BinnedStatistics(**init_args)
 
 
 def test_binned_statistics_bin_bad_duplicate(init_args, unbinned_data):
-    bs = BinnedStatistics('latlon', **init_args)
+    bs = BinnedStatistics(**init_args)
     variables, data = unbinned_data
     bs._bin_variable(variables[0], data)
     with pytest.raises(ValueError):
         bs._bin_variable(variables[0], data)
+
+
+def test_binned_statistics_eq(init_args, unbinned_data):
+    bs_1 = BinnedStatistics(**copy.deepcopy(init_args))
+    bs_2 = BinnedStatistics(**copy.deepcopy(init_args))
+    assert bs_1 == bs_2
+
+    # should fail if binning name is different
+    assert bs_1 != BinnedStatistics(**{
+        **init_args,
+        'name': 'diff_name'})
+
+    # should fail if binning dimensions are different
+    assert bs_1 != BinnedStatistics(**{
+        **init_args,
+        'bins': [bn.Dimension("latitude", resolution=1)]})
+
+    # should fail if diagnostics are different
+    assert bs_1 != BinnedStatistics(**{
+        **init_args,
+        'diagnostics': [bn.Diagnostic('omb', statistics=['sum'])]})
+
+    # should fail if binned  data is different
+    # bs_2 will not have any binned data yet
+    # bs_3 will be missing one input item compraed with bs_1
+    variables, data = unbinned_data
+    bs_3 = BinnedStatistics(**copy.deepcopy(init_args))
+    data_3 = data.isel(nlocs=range(1, data.dims['nlocs']))
+    for v in variables:
+        bs_1._bin_variable(v, data)
+        bs_3._bin_variable(v, data_3)
+    assert bs_1 != bs_2
+    assert bs_1 != bs_3
+
+    # should pass if binned data is the same
+    for v in variables:
+        bs_2._bin_variable(v, data)
+    assert bs_1 == bs_2
 
 
 def test_binned_statistics_bin(binned_stat, unbinned_data):
@@ -119,11 +159,10 @@ def test_binned_statistics_bin(binned_stat, unbinned_data):
 
 def test_binned_statistics_read_write_equal(binned_stat: BinnedStatistics):
     filename = 'test_output'
-    binned_stat.write(filename)
+    binned_stat.write(filename, overwrite=True)
     read_stats = BinnedStatistics.read(filename)
 
-    assert binned_stat.equivalent(read_stats)
-    assert binned_stat._data.identical(read_stats._data)
+    assert binned_stat == read_stats
 
 
 def test_binned_statistics_print(binned_stat: BinnedStatistics):
@@ -139,3 +178,35 @@ def test_binned_statistics_get_subset(binned_stat: BinnedStatistics):
         diagnostic='omb',
         statistic=('count', 'rmsd', 'stddev', 'mean', 'min', 'max'),
         )
+
+
+def test_binned_statistics_merge(init_args, unbinned_data):
+    # if the unbinned data is split into two subsets, binned, then merged,
+    # it should be identical to if the original data had been binned
+    # all at once
+    variables, data = unbinned_data
+
+    # split unbinned data
+    data_s1 = data.isel(nlocs=range(0, data.dims['nlocs'], 2))
+    data_s2 = data.isel(nlocs=range(1, data.dims['nlocs'], 2))
+    assert not data.identical(data_s1)
+    assert not data_s1.identical(data_s2)
+
+    # bin the data
+    bs = BinnedStatistics(**init_args)
+    bs_s1 = BinnedStatistics(**copy.deepcopy(init_args))
+    bs_s2 = BinnedStatistics(**copy.deepcopy(init_args))
+    for v in variables:
+        bs._bin_variable(v, data)
+        bs_s1._bin_variable(v, data_s1)
+        bs_s2._bin_variable(v, data_s2)
+    assert bs != bs_s1
+    assert bs_s1 != bs_s2
+
+    # class merge method
+    bs_merged = bs_s1.merge(bs_s2)
+    assert bs_merged == bs
+
+    # module merge method
+    bs_merged = bn.merge([bs_s1, bs_s2])
+    assert bs_merged == bs
