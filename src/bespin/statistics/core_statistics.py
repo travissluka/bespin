@@ -18,9 +18,8 @@ from bespin.core.statistic import StatisticBase, Statistic
 class Count(StatisticBase):
     """Simple counts of the number of data points."""
 
-    def __init__(self, variable, diagnostic, binned_data):
-        # Count doesn't use a diagnostic in its DataSet naming
-        super().__init__(variable, None, binned_data)
+    global_diagnostic = True
+    """To be computed once for all diagnostics of a variable."""
 
     def calc(self, data: np.ndarray) -> np.ndarray:
         return self._binner('count', data)

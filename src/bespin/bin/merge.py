@@ -5,7 +5,7 @@
 
 import click
 
-import bespin
+from bespin import BinnedStatistics
 
 
 @click.command()
@@ -33,9 +33,9 @@ def merge(input_files, output, overwrite):
     # Open and merge each file one at a time
     # TODO get crazy and have threaded merging?
     itr = iter(input_files)
-    merged = bespin.BinnedStatistics.read(next(itr))
+    merged = BinnedStatistics.read(next(itr))
     for file in itr:
-        merged = merged.merge(bespin.BinnedStatistics.read(file))
+        merged = merged.merge(BinnedStatistics.read(file))
 
     # write output file
     try:

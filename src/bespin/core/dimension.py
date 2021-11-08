@@ -3,11 +3,13 @@
 # This software is licensed under the terms of the Apache Licence Version 2.0
 # which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
 
-from typing import Sequence, Tuple
+from typing import Any, Sequence, Tuple, Dict
 from collections.abc import Sized
+import re
 
 import numpy as np
 import xarray as xr
+
 
 # default bounds for some common dimmension names
 _default_bounds = {
@@ -66,14 +68,15 @@ class Dimension(Sized):
         self.name = name
         self.units = None
 
-        # make sure correct combination of kewords provided
-        if ((resolution is not None and edges is not None)
-                or (edges is not None and bounds is not None)):
+        # make sure correct combination of keywords provided
+        if sum(x is not None for x in (edges, resolution)) != 1:
             raise ValueError(
-                f'{self}: only one of "edges" or "resolution/bounds"'
-                ' should be set')
+                f'{self}: must set exactly ONE of "edges" or "resolution"')
+        if (bounds is not None and resolution is None):
+            raise ValueError(
+                f'{self}: must define "resolution" if "bounds" is defined')
 
-        # define base on given bin edges
+        # define based on given bin edges
         if edges is not None:
             if len(edges) <= 1:
                 raise ValueError(
@@ -82,16 +85,22 @@ class Dimension(Sized):
 
         # define based on given resolution/bounds
         if resolution is not None:
-            if not bounds and self.name in _default_bounds:
+            # use a default bounds, if none given
+            if bounds is None and self.name in _default_bounds:
                 bounds = _default_bounds[name]
 
             # error checking
             if resolution <= 0:
                 raise ValueError(f'{self} resolution for must be > 0')
-            if not bounds or len(bounds) != 2:
+            if bounds is None:
                 raise ValueError(
                     f'{self} bounds must be provided if resolution is set')
+            if len(bounds) != 2:
+                raise ValueError(
+                    f'{self} bounds should be in the form [start, end].'
+                    f' Incorrect value given: {bounds}')
 
+            # calculate the bin edges based on resolution/bounds
             self._bin_edges = np.arange(
                 bounds[0], bounds[1] + resolution/2.0, resolution)
 
@@ -113,6 +122,69 @@ class Dimension(Sized):
         return (f'Dimension("{self.name}", bounds={self.bounds},'
                 f' bins={len(self)})')
 
+    @classmethod
+    def from_str(cls, string: str) -> 'Dimension':
+        """Create a Dimension instance from a string representation.
+
+        The string is expected to be in the format:
+
+        `<name>:<arg1>:<arg2>`
+
+        where one or two arguments are from the following:
+        - resolution: `r=<float>`
+        - bounds: `b=<List[float]>`
+        - edges: `e=<List[float]>`
+
+        Examples
+        --------
+        - latitude:r=1.0
+        - longitude:r=1.0:b=0,180.0
+        - depth:e=0,10,20,30,50,100,500
+
+        See Also
+        ---------
+        Dimension.__init__() for description of the resolution, bounds, and
+        edges arguments
+        """
+        args: Dict[str, Any] = {}
+
+        try:
+            # split into groups based on ":" character
+            # ensure there are 2 or 3 groups
+            splt = string.split(':')
+            if len(splt) not in (2, 3):
+                raise ValueError("Incorrect number of argument strings")
+
+            # first group is the name of the dimension
+            if not re.fullmatch(r'(\w|/)+', splt[0]):
+                raise ValueError("name is not in correct format")
+            args['name'] = splt[0]
+
+            # the next group(s) are lists of numbers, or a single number.
+            mapping = {
+                'r': 'resolution',
+                'b': 'bounds',
+                'e': 'edges', }
+            for s in splt[1:]:
+                r = re.fullmatch(f'([{"".join(mapping.keys())}])=(.+)', s)
+                if r is None:
+                    raise ValueError(
+                        f'Dimension argument string "{s}" is not valid.')
+                k = mapping[r.group(1)]
+                v = [float(x) for x in r.group(2).split(',')]
+                args[k] = v[0] if len(v) == 1 else v
+
+            # create the instance from the above parsed arguments
+            dimension = cls(**args)
+
+        except (ValueError, TypeError) as e:
+            raise ValueError(
+                f'Unable to parse dimension string "{string}".'
+                ' See documentation for correct format.'
+            ) from e
+
+        return dimension
+
     @property
     def bin_centers(self) -> np.ndarray:
         """Get the values of the bin centers."""
@@ -132,11 +204,13 @@ class Dimension(Sized):
         """Get the bin edges as coordinates in an xarray dataset."""
         xd = xr.Dataset(
             coords={self.name: (f'{self.name}_edges', self.bin_edges)})
-        xd.coords[self.name].attrs['units'] = self.units
+        if self.units:
+            xd.coords[self.name].attrs['units'] = self.units
         return xd
 
     def centers_to_xarray(self) -> xr.Dataset:
         """Get the bin centers as coordinates in an xarray dataset."""
         xd = xr.Dataset(coords={self.name: self.bin_centers})
-        xd.coords[self.name].attrs['units'] = self.units
+        if self.units:
+            xd.coords[self.name].attrs['units'] = self.units
         return xd

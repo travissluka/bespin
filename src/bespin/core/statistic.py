@@ -10,14 +10,14 @@ multichannel input data.
 """
 
 from typing import Iterable, MutableMapping, List, Type, FrozenSet
-from typing import Optional, Union
+from typing import Optional, Union, Hashable
 
 import xarray as xr
 import numpy as np
 from scipy.stats import binned_statistic_dd  # type: ignore
 from xarray.core.coordinates import DatasetCoordinates
 
-from bespin.core.dimension import Dimension
+from .dimension import Dimension
 
 
 class StatisticBase():
@@ -28,8 +28,11 @@ class StatisticBase():
     where applicable.
     """
 
-    # A list of statistics that need to be calculated before this statistic.
     depends: List[str] = []
+    """Statistics that need to be calculated before this statistic."""
+
+    global_diagnostic = False
+    """If True, the statistic is calculated only once for all diagnostics."""
 
     def __new__(cls, *args, **kwargs) -> 'StatisticBase':
         if cls == StatisticBase:
@@ -84,9 +87,10 @@ class StatisticBase():
         Form is of <variable>.<diagnostic>.<type_>  or just <variable>.<type_>
         if diagnostic is None.
         """
+        diag = None if self.global_diagnostic else self.diagnostic
         return '.'.join([i for i in (
             self.variable,
-            self.diagnostic,
+            diag,
             self.type_) if i])
 
     def _setup_binner(
@@ -107,7 +111,7 @@ class StatisticBase():
             raise ValueError("input to _binner() has too many dimensions.")
 
         # make sure all required binning dimensions are present in input data
-        dims_unbinned = set(list(self._unbinned_data.coords.keys()))
+        dims_unbinned = set(list(self._unbinned_data.variables.keys()))
         dims_binned = set([b.name for b in self._bins])
         if not dims_binned.issubset(dims_unbinned):
             diff = dims_binned.difference(dims_unbinned)
@@ -218,7 +222,7 @@ class Statistic():
 
     @property
     def dependencies(self) -> List[str]:
-        """Get list of other statistics that must be calcuated before this."""
+        """Get list of other statistics that must be calculated before this."""
         return self._statistic.depends
 
     def calc(
@@ -232,26 +236,44 @@ class Statistic():
         `unbinned_data`. The results are stored in `self.binned_data` under
         the variable name <diagnostic>.<statistic>
         """
-        # create dummy data if needed (e.g. for count() statistic)
-        if self.diagnostic:
-            src_var = f'{self.variable}.{self.diagnostic}'
-            if src_var not in unbinned_data.variables.keys():
-                raise RuntimeError(
-                    f'Cannot calc stat "{self.type_}" because'
-                    f' "{src_var}" does not exist in the input data'
-                )
-            vals = unbinned_data.variables[src_var].to_numpy()
-        else:
-            vals = np.zeros(list(unbinned_data.dims.values()))
+
+        # make sure it hasn't been calculated already
+        if self._statistic.var_name in self.binned_data:
+            if self._statistic.global_diagnostic:
+                # some stats (such as "count") will try to run multiple times.
+                # Gracefully skip, until such time that I can:
+                # TODO figure out how to run "count" once globally instead of
+                # for each diagnostic
+                return
+            # otherwise, this stat had no business trying to run again.
+            raise RuntimeError(
+                f"{self._statistic.var_name} has already been calculated.")
+
+        # Get the data needed
+        src_var = f'{self.diagnostic}/{self.variable}'
+        if src_var not in unbinned_data.variables.keys():
+            raise RuntimeError(
+                f'Cannot calc stat "{self.type_}" because'
+                f' "{src_var}" does not exist in the input data'
+            )
+        vals = unbinned_data.variables[src_var].to_numpy()
 
         # calculate the binned statistic
         self._statistic._setup_binner(bins, unbinned_data)
         result = self._statistic.calc(vals)
 
-        # add to the dataset
-        dims: Union[DatasetCoordinates, List[str]] = self.binned_data.coords
+        # determine the dimensions
+        dims: List[Hashable] = list(self.binned_data.coords.keys())
         if len(dims) == 0:
+            # this case occurs if we are doing a global binning, hence no dims
             dims = ['None']
+        elif len(dims) == 1 and len(result.shape) == 2:
+            # This case should only occur in multichannel data where there is
+            # no metavariable to describe the channels.
+            # TODO Catch this somewhere else higher in the processing?
+            dims += ['nchans']
+
+        # add to the dataset
         self.binned_data.update({self._statistic.var_name: (dims, result)})
 
     def merge(self, stat1: 'Statistic', stat2: 'Statistic') -> None:
@@ -264,8 +286,14 @@ class Statistic():
 
         # make sure statistic has not yet been merged
         if self._statistic.var_name in self.binned_data:
+            if self._statistic.global_diagnostic:
+                # some stats (such as "count") will try to run multiple times.
+                # Gracefully skip, until such time that I can:
+                # TODO figure out how to run "count" once globally instead of
+                # for each diagnostic
+                return
             raise RuntimeError(
-                f"{self._statistic.var_name} has already been calculated.")
+                f"{self._statistic.var_name} has already been merged.")
 
         # merge
         result = self._statistic.merge(stat1._statistic, stat2._statistic)

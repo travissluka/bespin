@@ -13,7 +13,13 @@ import copy
 from bespin.core.statistic import Statistic
 from bespin.core.diagnostic import Diagnostic
 from bespin.core.dimension import Dimension
+from bespin.core.filter import Filter, FilterBase
 import bespin.io.binned_netcdf as binned_io
+
+# modules that aren't directly accessed, but need to be imported so that
+# the subclasses can be registered with the factories
+import bespin.filters
+import bespin.statistics
 
 
 class BinnedStatistics:
@@ -40,7 +46,8 @@ class BinnedStatistics:
             ):
         """Initialize BinnedStatistics.
 
-        You probably don't want to use this. Look at BinnedStats.read().
+        You probably don't want to use this. Look at BinnedStats.read() or
+        BinnedStats.bin()
         """
         self.name = name
         self.bins = tuple(bins)
@@ -59,12 +66,86 @@ class BinnedStatistics:
         return self.equals(other)
 
     @classmethod
+    def bin(cls,
+            name: str,
+            bins: Iterable[Dimension],
+            diagnostics: Iterable[Diagnostic],
+            variables: Iterable[str],
+            filters: Iterable[FilterBase],
+            unbinned_data: xr.Dataset) -> 'BinnedStatistics':
+        """Bin the `unbinned_data` according to the options provided
+
+        Args
+        -----
+            name: the user-readable name of the binning (not really used for
+              anything at the moment)
+
+            bins: zero or more dimensions used for the binning
+
+            diagnostics: one or more diagnostics that will be binned.
+
+            variables: one or more observation variables that will binned.
+
+            filters: zero or more filters that will be applied to
+              `unbinned_data` before being binned. Several automatic filters
+              are implicitly added to this list.
+
+            unbinned_data: the input data to bin.
+
+        Example
+        --------
+           >>> BinnedStatistics(
+                name = 'latlon',
+                bins = (
+                    Dimension("latitude", resolution=10),
+                    Dimension("longitude", resolution=10)),
+                diagnostics = (
+                    Diagnostic('ObsValue', statistics=('count', 'sum', 'sum2', 'min', 'max')),
+                    Diagnostic('omb')),
+                variables = ['sea_surface_temperature',],
+                unbinned_data = data)
+        """
+        # TODO do some sanity checks?
+        # TODO the binning is complex enough that we could move this out into
+        #  a separate private module.
+
+        # create the empty BinnedStats instance
+        bs = cls(
+            name=name,
+            bins=bins,
+            diagnostics=diagnostics)
+
+        # do some filters on the whole dataset
+        filters = list(filters)
+        filters_all = [f for f in filters if not f.per_variable]
+        filters_all.append(Filter('ioda_metadata', [b.name for b in bins]))
+        filters_all.append(Filter('lon_wrap'))
+        for f in filters_all:
+            unbinned_data = f.filter(unbinned_data)
+
+        # for each variables
+        for v in variables:
+            unbinned_data_var = unbinned_data.copy()
+
+            # do some specific per-variable filtering
+            filters_var = [f for f in filters if f.per_variable]
+            filters_var.append(Filter('trim_vars', v, diagnostics, bins))
+            filters_var.append(Filter('remove_nan'))
+            for f in filters_var:
+                unbinned_data_var = f.filter(unbinned_data_var)
+
+            # do the binning
+            bs._bin_variable(v, unbinned_data_var)
+
+        return bs
+
+    @classmethod
     def read(cls, filename: str) -> 'BinnedStatistics':
         """Read an existing binned statistics from a file."""
         input_args, input_data = cls._io.read(filename)
 
         # TODO use the full set of global_attributes
-        bs = BinnedStatistics(
+        bs = cls(
             name=input_args['global_attributes']['binning'],
             bins=tuple(input_args['bins']),
             diagnostics=input_args['diagnostics'],
@@ -154,17 +235,12 @@ class BinnedStatistics:
 
         # create the return dataset, with proper coordinates.
         return_data = xr.Dataset(coords=self._data.coords)
-        dims = list(return_data.dims)
+        dims = list(self._data.dims)
         if len(dims) == 0:
             dims = ['None']
 
         # populate the dataset
         for var, diag, stat in product(variable, diagnostic, statistic):
-            if diag is not None and stat == 'count':
-                # TODO ugly hardcoding. figure out a cleaner way.
-                # "count" gets repeated for every diag without this.
-                continue
-
             # try to get the statistic, allow for failure
             val: Optional[np.ndarray]
             try:
@@ -231,16 +307,6 @@ class BinnedStatistics:
 
         for var in self.variables:
             merged.variables[var] = {}
-            # calculate the merged count
-            stat_class = [
-                Statistic(
-                    'count',
-                    variable=var,
-                    diagnostic=None,
-                    binned_data=d._data)
-                for d in [merged, self, other]
-            ]
-            stat_class[0].merge(*stat_class[1:3])
 
             # calculate the merged stat for each diagnostic
             for diag in self.diagnostics.values():
@@ -286,7 +352,7 @@ class BinnedStatistics:
         # binning on the variables using the second dimension.
         # TODO, clean this up to better handle the 2nd input dimension
         for diag in self.diagnostics:
-            var_name = f'{variable}.{diag}'
+            var_name = f'{diag}/{variable}'
 
             if var_name not in unbinned_data:
                 raise ValueError(f'{var_name} missing from unbinned data.')
@@ -310,13 +376,7 @@ class BinnedStatistics:
                             {coord.name: ((coord.name,), coord.values)})
                         self._data.set_coords(coord.name)
 
-        # create counts
         # TODO save and reuse bin locations
-        Statistic(
-            'count',
-            variable=variable,
-            diagnostic=None,
-            binned_data=self._data).calc(self.bins, unbinned_data)
 
         # run the bining on other stats and save results
         for diag in self.diagnostics:

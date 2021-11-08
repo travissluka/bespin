@@ -13,8 +13,8 @@ import bespin as bn
 from bespin.core.binned_statistics import BinnedStatistics
 
 diagnostics = (
-    bn.Diagnostic('omb', statistics=('sum', 'sum2', 'min', 'max')),
-    bn.Diagnostic('omf', statistics=('sum', 'sum2')),
+    bn.Diagnostic('omb', statistics=('count', 'sum', 'sum2', 'min', 'max')),
+    bn.Diagnostic('omf', statistics=('count', 'sum', 'sum2')),
     )
 
 bins = (
@@ -72,7 +72,7 @@ def unbinned_data(request):
     data = xr.Dataset(
         coords=coords,
         data_vars={
-            f'{v}.{d.name}': (
+            f'{d.name}/{v}': (
                 dims.keys(),
                 100+10*np.random.normal(size=list(dims.values())))
             for v, d in product(variables, diagnostics)},
@@ -122,7 +122,7 @@ def test_binned_statistics_eq(init_args, unbinned_data):
     # should fail if diagnostics are different
     assert bs_1 != BinnedStatistics(**{
         **init_args,
-        'diagnostics': [bn.Diagnostic('omb', statistics=['sum'])]})
+        'diagnostics': [bn.Diagnostic('omb', statistics=['count', 'sum'])]})
 
     # should fail if binned  data is different
     # bs_2 will not have any binned data yet

@@ -13,16 +13,15 @@ those binned statistics and plot them.
 from bespin.core.binned_statistics import BinnedStatistics, merge
 from bespin.core.diagnostic import Diagnostic
 from bespin.core.dimension import Dimension
+from bespin.core.filter import Filter
 from bespin.core.statistic import Statistic
-
-import bespin.statistics as statistics
 
 __all__ = [
     'BinnedStatistics',
     'Diagnostic',
     'Dimension',
+    'Filter',
     'Statistic',
     'core',
-    'statistics',
     'merge',
 ]

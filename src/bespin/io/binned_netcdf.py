@@ -42,8 +42,15 @@ def read(filename: str) -> Tuple[Mapping[str, Any], Mapping[str, xr.Dataset]]:
     # Diagnostics attributes
     diagnostics: List[Diagnostic] = []
     group = root.groups['Diagnostics']
-    for diag in group.getncattr('diagnostics'):
-        diagnostics.append(Diagnostic(diag, group.getncattr(f'{diag}.stats')))
+    diags = group.getncattr('diagnostics')
+    if type(diags) is str:
+        # make sure diags is in a list, even if it is just one
+        diags = [diags, ]
+    for diag in diags:
+        stats = group.getncattr(f'{diag}.stats')
+        if type(stats) is str:
+            stats = [stats, ]
+        diagnostics.append(Diagnostic(diag, stats))
     results['diagnostics'] = diagnostics
 
     root.close()

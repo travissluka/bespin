@@ -63,7 +63,7 @@ unbinned_data = xr.Dataset(
             np.array([200.0, 95.0, 12.0, 190, 200, 210])),
         },
     data_vars={
-        'test.test': (
+        'test/test': (
             ('nloc',),
             np.array([1, 2, 3, 4, 5, 6]))
     }
@@ -136,9 +136,18 @@ def test_statistic_badcalc_nodep(init_args, bins):
 
 def test_statistic_badcalc_nodiag(init_args, bins):
     # calc() should fail if a non existant diagnostic is specified
+    s = Statistic('sum', **{**init_args, 'diagnostic': 'foobar'})
     with pytest.raises(RuntimeError):
-        s = Statistic('sum', **{**init_args, 'diagnostic': 'foobar'})
         s.calc(bins, unbinned_data)
+
+
+def test_statistic_badcalc_duplicate(init_args, bins):
+    # calc() should fail if we try calculating more than once
+    Statistic('count', **init_args).calc(bins, unbinned_data)
+    Statistic('sum', **init_args).calc(bins, unbinned_data)
+    stat = Statistic('sum', **init_args)
+    with pytest.raises(RuntimeError):
+        stat.calc(bins, unbinned_data)
 
 
 def test_statistic_badcalc_derived(derived_statistics, init_args, bins):
@@ -148,11 +157,27 @@ def test_statistic_badcalc_derived(derived_statistics, init_args, bins):
         stat.calc(bins, unbinned_data)
 
 
-def test_statistic_badmerge_derived(derived_statistics, init_args, bins):
-    # merge() should fail for derived statistics
-    stat = Statistic(derived_statistics, **init_args)
+# def test_statistic_badmerge_derived(derived_statistics, init_args, bins):
+#     # merge() should fail for derived statistics
+
+
+def test_statistic_badmerge_duplicate(init_args, bins):
+    # merge() should fail if we try calculating more than once
+
+    # calculate "count" and "sum" on two copies of the set
+    init_args_copy = [copy.deepcopy(init_args) for i in range(2)]
+    c = [Statistic('count', **i) for i in init_args_copy]
+    [c.calc(bins, unbinned_data) for c in c]
+    s = [Statistic('sum', **i) for i in init_args_copy]
+    [s.calc(bins, unbinned_data) for s in s]
+
+    # merge "count" and "sum"
+    Statistic('count', **init_args).merge(*c)
+    Statistic('sum', **init_args).merge(*s)
+
+    # merging "sum" a second time should fail
     with pytest.raises(RuntimeError):
-        stat.calc(bins, unbinned_data)
+        Statistic('sum', **init_args).merge(*s)
 
 
 # ------------------------------------------------------------------------------
@@ -196,10 +221,6 @@ def test_statistic_merge(core_statistics, init_args, bins, bin_dims):
     # identical to if the statistic had been calculated on the full unbinned
     # input data
     stat = Statistic(core_statistics, **init_args)
-
-    # calculate dependencies
-    for d in stat.dependencies:
-        Statistic(d, **init_args).calc(bins, unbinned_data)
 
     # split the unbinned data into two subsets
     split_init_args = [copy.deepcopy(init_args) for i in range(2)]
