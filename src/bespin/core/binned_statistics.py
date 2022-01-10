@@ -3,9 +3,10 @@
 # This software is licensed under the terms of the Apache Licence Version 2.0
 # which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
 
-from typing import Iterable, Mapping, MutableMapping, Optional
+from typing import Any, Iterable, Mapping, MutableMapping, Optional, List
 
 import xarray as xr
+import pandas
 from itertools import product
 import numpy as np
 import copy
@@ -43,6 +44,7 @@ class BinnedStatistics:
             name: str,
             bins: Iterable[Dimension],
             diagnostics: Iterable[Diagnostic],
+            **kwargs
             ):
         """Initialize BinnedStatistics.
 
@@ -55,6 +57,12 @@ class BinnedStatistics:
         self.variables: MutableMapping[str, Mapping[str, str]] = {}
         self._data = xr.Dataset(
             coords=xr.merge([b.centers_to_xarray() for b in self.bins]))
+
+        # TODO store following meta data in _data xarray as attributes
+        self.window_start: pandas.Timestamp = kwargs.get('window_start')
+        self.window_end: pandas.Timestamp = kwargs.get('window_end')
+        self.sliced_dims: MutableMapping[str, Any] = {}
+
 
     def __repr__(self) -> str:
         bin_names = [b.name for b in self.bins]
@@ -117,9 +125,14 @@ class BinnedStatistics:
 
         # do some filters on the whole dataset
         filters = list(filters)
-        filters_all = [f for f in filters if not f.per_variable]
-        filters_all.append(Filter('ioda_metadata', [b.name for b in bins]))
-        filters_all.append(Filter('lon_wrap'))
+
+        filters_all = [
+            Filter('ioda_metadata', [b.name for b in bins]),
+            Filter('lon_wrap'),
+            ]
+        for f in filters:
+            if not f.per_variable:
+                filters_all.append(f)
         for f in filters_all:
             unbinned_data = f.filter(unbinned_data)
 
@@ -130,12 +143,16 @@ class BinnedStatistics:
             # do some specific per-variable filtering
             filters_var = [f for f in filters if f.per_variable]
             filters_var.append(Filter('trim_vars', v, diagnostics, bins))
-            filters_var.append(Filter('remove_nan'))
+            #filters_var.append(Filter('remove_nan'))
             for f in filters_var:
-                unbinned_data_var = f.filter(unbinned_data_var)
-
+                args = {'variable': v}
+                unbinned_data_var = f.filter(unbinned_data_var, **args)
             # do the binning
             bs._bin_variable(v, unbinned_data_var)
+
+        # pull some attributes from the unbinned_data
+        for attr in ('window_start', 'window_end'):
+            bs.__dict__[attr] = unbinned_data.attrs[attr]
 
         return bs
 
@@ -150,6 +167,11 @@ class BinnedStatistics:
             bins=tuple(input_args['bins']),
             diagnostics=input_args['diagnostics'],
             )
+
+        # parse date ranges
+        for a in ('window_start','window_end'):
+            bs.__dict__[a] = pandas.to_datetime(
+                input_args['global_attributes'][a])
 
         # TODO actually read in variable metadata
         bs.variables = {
@@ -258,6 +280,17 @@ class BinnedStatistics:
             if val is not None:
                 db_name = '.'.join([v for v in (var, diag, stat) if v])
                 return_data.update({db_name: (dims, val)})
+
+        # set global attributes
+        # TODO should these be global attributes on the internal xarray?
+        for a in ('window_start', 'window_end'):
+            return_data.attrs[a] = self.__dict__[a].isoformat()
+        if len(self.sliced_dims):
+            return_data.attrs['sliced_dims'] = ' '.join(self.sliced_dims)
+            for k, v in self.sliced_dims.items():
+                # TODO prefix name so that we don't risk overwriting something important?
+                return_data.attrs[k] = v
+
         return return_data
 
     def write(self, filename: str, overwrite: bool = False) -> None:
@@ -273,8 +306,8 @@ class BinnedStatistics:
             'binning': self.name,
             'obs_source': 'TODO: fill this in',
             'experiment': 'TODO: fill this in',
-            'window_start': 'TODO: fill this in',
-            'window_end': 'TODO: fill this in',
+            'window_start': self.window_start.isoformat(),
+            'window_end': self.window_end.isoformat(),
             'variables': ' '.join(self.variables.keys())
             }
 
@@ -321,10 +354,45 @@ class BinnedStatistics:
                     ]
                     stat_class[0].merge(*stat_class[1:3])
 
-        # TODO merge special attributes such as obs window start/end
-        # once those are actually populated
+        # merge special attributes such as obs window start/end
+        merged.window_start = min(self.window_start, other.window_start)
+        merged.window_end = max(self.window_end, other.window_end)
+        # TODO handle other attributes
 
         return merged
+
+    def select_dim(self, **dims) -> 'BinnedStatistics':
+        """remove a dimension of the binning by taking a specific slice"""
+        # create a record in an attribute what slice what chosen
+        for k, v in dims.items():
+            # TODO get the actual values, NOT the indexof the array
+            self.sliced_dims[k] = v
+
+        # TODO is a deepcopy really necessary for the xarray? (probably not)
+        inst = copy.deepcopy(self)
+        for d in dims:
+            inst.bins = tuple(filter(lambda x: (x.name != d), inst.bins))
+            inst._data = inst._data.sel({d: dims[d]}).drop_vars(d)
+        return inst
+
+    def collapse_dim(self, *dims: str) -> 'BinnedStatistics':
+        def isel(self, **dims) -> 'BinnedStatistics':
+            inst = copy.deepcopy(self)
+            for d in dims:
+                inst.bins = tuple(filter(lambda x: (x.name != d), inst.bins))
+                inst._data = inst._data.isel({d: dims[d]}).drop_vars(d)
+            return inst
+
+        # NOTE this is horribly innefficient
+        inst = copy.copy(self)
+        for d in dims:
+            collapsed = [ isel(inst, **{d:i})
+                          for i in range(inst._data.dims[d])]
+            inst2 = collapsed[0]
+            for c in collapsed[1:]:
+                inst2 = inst2.merge(c)
+            inst = inst2
+        return inst
 
     def concat(
             self,

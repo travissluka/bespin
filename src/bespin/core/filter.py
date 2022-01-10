@@ -54,7 +54,7 @@ class FilterBase(ABC):
         pass
 
     @abstractmethod
-    def filter(self, data: xr.Dataset) -> xr.Dataset:
+    def filter(self, data: xr.Dataset, **kwargs) -> xr.Dataset:
         """Filter input unbinned data in some way."""
         pass
 

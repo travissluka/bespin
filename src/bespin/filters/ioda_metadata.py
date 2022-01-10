@@ -6,12 +6,14 @@
 from typing import Iterable
 
 import xarray as xr
+import pandas
+import numpy
 
 from bespin.core.filter import FilterBase
 
 
 # TODO use only MetaData once we are working with proper IODAv2 files
-_metaGroups = ('MetaData', 'varMetaData', 'recMetaData')
+_metaGroups = ('MetaData', 'VarMetaData', 'RecMetaData')
 
 
 class IodaMetadata(FilterBase):
@@ -36,10 +38,12 @@ class IodaMetadata(FilterBase):
         self.bin_names = bin_names
         super().__init__()
 
-    def filter(self, data: xr.Dataset) -> xr.Dataset:
+    def filter(self, data: xr.Dataset,  **kwargs) -> xr.Dataset:
         # get list of binning dimension variables whose name does not yet
         # exist in the dataset
         dims_to_filter = set(self.bin_names).difference(data.variables.keys())
+        dims_to_filter = dims_to_filter.union({'sensor_channel'})
+
 
         for d in dims_to_filter:
             # get list of the metadata groups this variable exists under
@@ -53,4 +57,16 @@ class IodaMetadata(FilterBase):
 
                 # rename
                 data = data.rename({f'{meta_group[0]}/{d}': d})
+                data = data.set_coords(d)
+
+        # get start/end times
+        # TODO handle the new ioda datetime epoch method
+        # TODO what happens if datetime is a dimension, already moved by code above?
+        if 'MetaData/datetime' in data.variables:
+            dt = pandas.to_datetime(numpy.array(
+                data.variables['MetaData/datetime'].astype(str)))
+
+            data.attrs['window_start'] = numpy.min(dt)
+            data.attrs['window_end'] = numpy.max(dt)
+
         return data

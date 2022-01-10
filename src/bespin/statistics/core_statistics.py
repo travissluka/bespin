@@ -70,14 +70,14 @@ class Sum2(StatisticBase):
         delta = stat1._get('mean') - stat2._get('mean')
         delta[count1 == 0] = 0.0
         delta[count2 == 0] = 0.0
-        return (
-            stat1._get('sum2') +
-            stat2._get('sum2') +
-            np.true_divide(
-                (delta**2)*count1*count2,
-                count,
-                where=count > 0)
-        )
+        res = np.zeros_like(delta)
+        np.true_divide(
+            (delta**2)*count1*count2,
+            count,
+            res,
+            where=count > 0)
+        res += stat1._get('sum2') +stat2._get('sum2')
+        return res
 
 
 class Min(StatisticBase):

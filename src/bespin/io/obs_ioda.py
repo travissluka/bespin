@@ -19,7 +19,7 @@ import xarray as xr
 _dim_mapping = {
     'MetaData': 'nlocs',
     'RecMetaData': 'nrecs',
-    'VarMetaData': 'nvars'
+    'VarMetaData': 'nchans'
 }
 
 

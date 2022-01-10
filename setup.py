@@ -16,15 +16,17 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     install_requires=[
-        'numpy>=1.19',
+        'click',
         'netcdf4',
+        'numpy>=1.19',
         'scipy',
         'xarray',
-        'click',
     ],
     package_dir={"": "src"},
-    packages=setuptools.find_packages(where="src"),
+    packages = setuptools.find_packages(where='src'),
+    package_data={"bespin": ["py.typed"]},
     python_requires=">=3.7",
+    zip_safe=False,
     entry_points={
         'console_scripts': [
             'bespin=bespin.bin.bespin:cli',

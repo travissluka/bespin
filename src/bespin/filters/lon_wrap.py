@@ -15,7 +15,7 @@ class LonWrap(FilterBase):
     def __init__(self):
         super().__init__()
 
-    def filter(self, data: xr.Dataset) -> xr.Dataset:
+    def filter(self, data: xr.Dataset,  **kwargs) -> xr.Dataset:
         if 'longitude' in data.variables:
             msk = data.variables['longitude'] < 0
             data.variables['longitude'][msk] += 360.0

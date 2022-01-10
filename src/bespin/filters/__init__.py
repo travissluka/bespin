@@ -8,5 +8,5 @@
 from . import copy
 from . import ioda_metadata
 from . import lon_wrap
-from . import remove_nan
 from . import trim_vars
+from . import sub

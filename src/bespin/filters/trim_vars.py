@@ -23,7 +23,11 @@ class TrimVars(FilterBase):
         super().__init__()
         self.keep = [f'{diag.name}/{variable}' for diag in diagnostics]
         self.keep += [d.name for d in dimensions]
+        chan_var = 'sensor_channel'
+        self.keep += [chan_var,]
 
-    def filter(self, data: xr.Dataset) -> xr.Dataset:
-        data = data.get(self.keep)  # type: ignore
+    def filter(self, data: xr.Dataset,  **kwargs) -> xr.Dataset:
+        keep = [s for s in self.keep if s in data.variables]
+        data = data.get(keep)  # type: ignore
+
         return data

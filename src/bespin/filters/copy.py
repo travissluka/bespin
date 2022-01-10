@@ -12,11 +12,15 @@ class Copy(FilterBase):
     """copy a variable in the dataset from `var_src` to `var_dst`.
     """
 
+    per_variable = True
+
     def __init__(self, var_src: str, var_dst: str):
         self.var_src = var_src
         self.var_dst = var_dst
         super().__init__()
 
-    def filter(self, data: xr.Dataset) -> xr.Dataset:
-        data = data.update({self.var_dst: data.data_vars[self.var_src]})
+    def filter(self, data: xr.Dataset, **kwargs) -> xr.Dataset:
+        var_src = self.var_src.format(**kwargs)
+        var_dst = self.var_dst.format(**kwargs)
+        data = data.update({var_dst: data.data_vars[var_src]})
         return data

@@ -8,6 +8,7 @@ import xarray as xr
 import pytest
 from itertools import product
 import copy
+import pandas
 
 import bespin as bn
 from bespin.core.binned_statistics import BinnedStatistics
@@ -41,6 +42,8 @@ def init_args(request):
         'name': 'binning_name',
         'bins': _bins[request.param],
         'diagnostics':  diagnostics,
+        'window_start' : pandas.Timestamp(2010,1,1),
+        'window_end': pandas.Timestamp(2010,1,2),
     }
 
 
@@ -69,14 +72,14 @@ def unbinned_data(request):
         variables = ['sea_water_temperature', 'sea_water_salinity']
 
     # generate fake data
-    data = xr.Dataset(
-        coords=coords,
-        data_vars={
-            f'{d.name}/{v}': (
+    dv = {
+        f'{d.name}/{v}': (
                 dims.keys(),
                 100+10*np.random.normal(size=list(dims.values())))
-            for v, d in product(variables, diagnostics)},
-    )
+            for v, d in product(variables, diagnostics)}
+
+    data = xr.Dataset(data_vars={**dv,**coords})
+    data = data.set_coords(coords.keys())
     return variables, data
 
 
@@ -100,6 +103,7 @@ def test_binned_statistics_bin_bad_duplicate(init_args, unbinned_data):
     bs = BinnedStatistics(**init_args)
     variables, data = unbinned_data
     bs._bin_variable(variables[0], data)
+
     with pytest.raises(ValueError):
         bs._bin_variable(variables[0], data)
 

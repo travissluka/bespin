@@ -117,9 +117,10 @@ class StatisticBase():
             diff = dims_binned.difference(dims_unbinned)
             raise RuntimeError(f'missing dimensions {diff}')
 
+
         # prepare the binning information
         dim_vals: Union[List[xr.Variable], np.ndarray] = [
-            self._unbinned_data.variables[c].as_numpy()
+            self._unbinned_data.variables[c]
             for c in [b.name for b in self._bins]]
         bins = [b.bin_edges for b in self._bins]
         if not len(bins):
@@ -148,12 +149,25 @@ class StatisticBase():
             result_size += [0]
             result_data = np.empty(result_size)
             for i in range(data.shape[1]):
+                # dimming values could be 2D, if so, take a 1D slice
+                # TODO remove this hardcoded dimension name "nchans"
+                dim_vals_1d = []
+                for d in dim_vals:
+                    assert len(d.shape) <= 2
+                    if len(d.shape) > 1:
+                        d2 = d.isel({'nchans': i})
+                        dim_vals_1d.append(d2)
+                    else:
+                        dim_vals_1d.append(d)
+
+
+                # do the binning
                 results = binned_statistic_dd(
-                    sample=dim_vals,
+                    sample=dim_vals_1d,
                     values=data[:, i],
                     statistic=method,
-                    bins=bins,
-                    binned_statistic_result=results)
+                    bins=bins)
+
 
                 # give the array and empty dimension at the end, unless
                 # we binned with no bins
@@ -164,6 +178,7 @@ class StatisticBase():
                 # concatenate to form final result array
                 result_data = np.concatenate(
                     (result_data, result_1d), axis=-1)
+
             return result_data
 
     def _get(self, type_: str) -> np.ndarray:
@@ -264,14 +279,16 @@ class Statistic():
 
         # determine the dimensions
         dims: List[Hashable] = list(self.binned_data.coords.keys())
+
         if len(dims) == 0:
             # this case occurs if we are doing a global binning, hence no dims
             dims = ['None']
-        elif len(dims) == 1 and len(result.shape) == 2:
+        elif len(dims) < len(result.shape):
             # This case should only occur in multichannel data where there is
             # no metavariable to describe the channels.
             # TODO Catch this somewhere else higher in the processing?
             dims += ['nchans']
+            assert len(dims) == len(result.shape)
 
         # add to the dataset
         self.binned_data.update({self._statistic.var_name: (dims, result)})
@@ -302,6 +319,7 @@ class Statistic():
         dims: Union[DatasetCoordinates, List[str]] = self.binned_data.coords
         if len(dims) == 0:
             dims = ['None']
+
         self.binned_data.update({self._statistic.var_name: (dims, result)})
 
     def value(self) -> np.ndarray:

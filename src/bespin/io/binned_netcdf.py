@@ -71,12 +71,18 @@ def write(
         raise FileExistsError()
 
     # Diagnostics
-    data.to_netcdf(filename, 'w', group='Diagnostics')
+    compression = {'zlib':True, 'complevel':5}
+    data.to_netcdf(
+        filename, 'w', group='Diagnostics',
+        encoding={var: compression for var in data.variables})
 
     # Bins
     bin_xr = xr.Dataset(
         coords=xr.merge([b.edges_to_xarray() for b in bins]))
-    bin_xr.to_netcdf(filename, 'a', group="Bins")
+    bin_xr.to_netcdf(
+        filename, 'a', group="Bins",
+        encoding={var: compression for var in bin_xr.variables})
+
 
     # open file for writing other groups
     root = nc.Dataset(filename, 'a', format="NETCDF4")

@@ -48,7 +48,10 @@ class StdDev(StatisticBase):
 
     # assuming population standard deviation
     def value(self) -> np.ndarray:
-        return np.sqrt(self._get('variance'))
+        variance = self._get('variance')
+        variance[variance < 0] = np.nan
+        return np.sqrt(variance)
+
 
 
 class RMSD(StatisticBase):
