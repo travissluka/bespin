@@ -44,7 +44,6 @@ class IodaMetadata(FilterBase):
         dims_to_filter = set(self.bin_names).difference(data.variables.keys())
         dims_to_filter = dims_to_filter.union({'sensor_channel'})
 
-
         for d in dims_to_filter:
             # get list of the metadata groups this variable exists under
             meta_group = [g for g in _metaGroups
@@ -60,11 +59,11 @@ class IodaMetadata(FilterBase):
                 data = data.set_coords(d)
 
         # get start/end times
-        # TODO handle the new ioda datetime epoch method
+        # TODO handle the old ioda datetime strings?
         # TODO what happens if datetime is a dimension, already moved by code above?
-        if 'MetaData/datetime' in data.variables:
+        if 'MetaData/dateTime' in data.variables:
             dt = pandas.to_datetime(numpy.array(
-                data.variables['MetaData/datetime'].astype(str)))
+                data.variables['MetaData/dateTime'].astype(str)))
 
             data.attrs['window_start'] = numpy.min(dt)
             data.attrs['window_end'] = numpy.max(dt)
