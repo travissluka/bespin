@@ -6,7 +6,8 @@
 """Observation filters that are applied before binning."""
 
 from . import copy
+from . import domain_clip
 from . import ioda_metadata
 from . import lon_wrap
-from . import trim_vars
 from . import sub
+from . import trim_vars
