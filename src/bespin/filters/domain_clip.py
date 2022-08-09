@@ -3,7 +3,7 @@
 # This software is licensed under the terms of the Apache Licence Version 2.0
 # which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
 
-from shapely.geometry import Point, Polygon
+import pygeos
 
 import xarray as xr
 
@@ -12,20 +12,21 @@ from bespin.core.filter import FilterBase
 class DomainClip(FilterBase):
     """ensure that observations are within a given clipping region."""
 
-    # TODO this is slow, use a different library?
     # TODO handle cases where polygon crosses 0/360 longitude
 
     def __init__(self, *args):
         # parse lat/lon pairs
-        points = []
+        lons = []
+        lats = []
         for arg in args:
             ll = arg.split(',')
             assert(len(ll) == 2)
             lat, lon = [float(x) for x in ll]
             if lon < 0.0:
                 lon += 360
-            points.append(Point(lat, lon))
-        self.domain = Polygon(points)
+            lons.append(lon)
+            lats.append(lat)
+        self.domain = pygeos.polygons(pygeos.linearrings(lons, lats))
         super().__init__()
 
 
@@ -35,12 +36,10 @@ class DomainClip(FilterBase):
 
         lats = data[lat_dim].data
         lons = data[lon_dim].data
-        mask = xr.zeros_like(data[lat_dim])
+        points = pygeos.points(lons, lats)
 
-        # test each point
-        for i in range(len(lats)):
-            point = Point(lats[i], lons[i])
-            mask[i] = 1 if self.domain.contains(point) else 0
+        mask = xr.zeros_like(data[lat_dim])
+        mask[pygeos.contains(self.domain, points)] = 1
 
         data = data.where(mask == 1, drop=True)
 
