@@ -15,6 +15,14 @@ import warnings
 from bespin.core.statistic import StatisticBase, Statistic
 
 
+def check(data: np.ndarray, pos=False):
+    """safety check to make sure NaNs and Infs don't slip in."""
+    assert np.count_nonzero(np.isnan(data)) == 0
+    assert np.count_nonzero(np.isinf(data)) == 0
+    if pos:
+        assert np.count_nonzero(data < 0) == 0
+
+
 class Count(StatisticBase):
     """Simple counts of the number of data points."""
 
@@ -34,10 +42,19 @@ class Sum(StatisticBase):
     depends = ['count']
 
     def calc(self, data: np.ndarray) -> np.ndarray:
-        return self._binner('sum', data)
+        sum_val = self._binner('sum', data)
+        check(sum_val)
+        return sum_val
 
     def merge(self, stat1: StatisticBase, stat2: StatisticBase) -> np.ndarray:
-        return stat1._get('sum') + stat2._get('sum')
+        sum1 = stat1._get('sum')
+        sum2 = stat2._get('sum')
+        check(sum1)
+        check(sum2)
+
+        value = sum1 + sum2
+        check(value)
+        return value
 
 
 class Sum2(StatisticBase):
@@ -54,11 +71,18 @@ class Sum2(StatisticBase):
         sum1 = self._get('sum')
         offset = np.nanmean(data)
         sum2 = self._binner('sum', (data-offset)**2)
-        sum2_offset = np.true_divide(
+        sum2_offset = np.zeros_like(sum2)
+        np.divide(
             (sum1-offset*count)**2,
             count,
+            out=sum2_offset,
             where=count > 0)
-        return sum2-sum2_offset
+        value = sum2 - sum2_offset
+
+        # rounding errors are resulting in negative numbers when variance is small for a bin
+        value[value < 0.0] = 0.0
+        check(value, pos=True)
+        return value
 
         # # Alternate form. don't use. Here for sanity check during debugging
         # return self._bin(lambda x: np.sum( (x-np.mean(x))**2 ), data)
@@ -67,17 +91,21 @@ class Sum2(StatisticBase):
         count1 = stat1._get('count')
         count2 = stat2._get('count')
         count = count1 + count2
-        delta = stat1._get('mean') - stat2._get('mean')
-        delta[count1 == 0] = 0.0
-        delta[count2 == 0] = 0.0
-        res = np.zeros_like(delta)
-        np.true_divide(
+
+        mean1 = np.where(count1 > 0, stat1._get('mean'), 0.0)
+        mean2 = np.where(count2 > 0, stat2._get('mean'), 0.0)
+        delta = mean1 - mean2
+        check(delta)
+
+        value = np.zeros_like(delta)
+        np.divide(
             (delta**2)*count1*count2,
             count,
-            res,
+            out=value,
             where=count > 0)
-        res += stat1._get('sum2') +stat2._get('sum2')
-        return res
+        value += stat1._get('sum2') + stat2._get('sum2')
+        check(value, pos=True)
+        return value
 
 
 class Min(StatisticBase):
@@ -87,7 +115,7 @@ class Min(StatisticBase):
         return self._binner('min', data)
 
     def merge(self, stat1: StatisticBase, stat2: StatisticBase) -> np.ndarray:
-        # numpy warns in the case of nanmin(NaN, NaN). Supress those warning
+        # numpy warns in the case of nanmin(NaN, NaN). Suppress those warning
         # because the resulting NaN is indeed what I want
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)
@@ -101,7 +129,7 @@ class Max(StatisticBase):
         return self._binner('max', data)
 
     def merge(self, stat1: StatisticBase, stat2: StatisticBase) -> np.ndarray:
-        # numpy warns in the case of nanmax(NaN, NaN). Supress those warning
+        # numpy warns in the case of nanmax(NaN, NaN). Suppress those warning
         # because the resulting NaN is indeed what I want
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)

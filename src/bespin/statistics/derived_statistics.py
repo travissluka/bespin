@@ -23,11 +23,11 @@ class Mean(StatisticBase):
     depends = ['count', 'sum']
 
     def value(self) -> np.ndarray:
-        with np.errstate(divide='ignore', invalid='ignore'):
-            count = self._get('count')
-            sum_ = self._get('sum')
-            return sum_ / count
-
+        count = self._get('count')
+        sum1 = self._get('sum')
+        value = np.full_like(sum1, np.nan)
+        np.divide(sum1, count, out=value, where=count>0)
+        return value
 
 class Variance(StatisticBase):
     """Population variance of a bin."""
@@ -35,10 +35,11 @@ class Variance(StatisticBase):
     depends = ['count', 'sum', 'sum2']
 
     def value(self) -> np.ndarray:
-        with np.errstate(divide='ignore', invalid='ignore'):
-            count = self._get('count')
-            sum2 = self._get('sum2')
-            return np.where(count > 1, sum2/count, np.nan)
+        count = self._get('count')
+        sum2 = self._get('sum2')
+        value = np.full_like(sum2, np.nan)
+        np.divide(sum2, count, out=value, where=count > 1)
+        return value
 
 
 class StdDev(StatisticBase):
@@ -49,9 +50,7 @@ class StdDev(StatisticBase):
     # assuming population standard deviation
     def value(self) -> np.ndarray:
         variance = self._get('variance')
-        variance[variance < 0] = np.nan
         return np.sqrt(variance)
-
 
 
 class RMSD(StatisticBase):
