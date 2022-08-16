@@ -6,7 +6,6 @@
 """Interface to IODA netcdf obs, bypassing the annoying IODA python interface"""
 
 from typing import Optional, List
-from attr import dataclass
 
 import netCDF4 as nc
 import pandas
