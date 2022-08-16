@@ -14,18 +14,33 @@ class Sub(FilterBase):
 
     per_variable = True
 
-    def __init__(self, src1: str, src2: str, dst: str):
+    def __init__(self, src1: str, src2: str, dst: str, *args):
         self.src1 = src1
         self.src2 = src2
         self.dst = dst
+        self.quiet = False
+
+        # optional arguments
+        for arg in args:
+            if arg == 'quiet':
+                self.quiet=True
+            else:
+                raise ValueError(f'invalid optional argument "{arg}" passed to "sub"')
+
         super().__init__()
 
     def filter(self, data: xr.Dataset, **kwargs) -> xr.Dataset:
-        src1 = f"{self.src1}/{kwargs['variable']}"
-        src2 = f"{self.src2}/{kwargs['variable']}"
-        dst = f"{self.dst}/{kwargs['variable']}"
+        src1 = self.src1.format(**kwargs)
+        src2 = self.src2.format(**kwargs)
+        dst = self.dst.format(**kwargs)
+
+        # check to make sure the required variables are present
+        for src in (src1, src2):
+            if src not in data.data_vars:
+                if self.quiet: # not an error, silently return
+                    return data
+                else:
+                    raise ValueError(f'Cannot find input variable "{src}" in the dataset')
+
         data = data.update({dst: data.data_vars[src1] - data.data_vars[src2]})
-#        print(f'DBG\n{src1}, {src2}. {dst}')
- #       sys.exit(1)
-#        data = data.update({var_dst: data.data_vars[var_src]})
         return data
