@@ -96,7 +96,6 @@ def bin_(obs_files, config, filters, variables, diagnostics, bins,
     # open each file, bin it, and merge all the results
     data: BinnedStatistics = None
     for obs_file in obs_files:
-        print(f'processing {obs_file}')
         unbinned_data = obsio.read(obs_file)
 
         # if no variables were listed, by default use everything within one
