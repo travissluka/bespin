@@ -130,7 +130,12 @@ class StatisticBase():
 
         # handle multidimensional input data specially
         # TODO: this needs to be done more efficiently
-        if len(data.shape) == 1:
+                # exit early if there is nothing to bin
+        if not len(data):
+            # there is nothing to bin, return an empty array
+            return np.zeros([b.shape[0]-1 for b in bins])
+
+        elif len(data.shape) == 1:
             # 1D input data
             results = binned_statistic_dd(
                 sample=dim_vals,

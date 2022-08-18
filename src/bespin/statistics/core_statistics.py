@@ -67,8 +67,14 @@ class Sum2(StatisticBase):
         # Uses the already computed sum, to speed things up a bit.
         # Calculates using offset data (subtract global mean) to help
         # numerical stability, maybe.
+
         count = self._get('count')
         sum1 = self._get('sum')
+
+        # quick exit if input data is empty
+        if not len(data):
+            return np.zeros_like(count)
+
         offset = np.nanmean(data)
         sum2 = self._binner('sum', (data-offset)**2)
         sum2_offset = np.zeros_like(sum2)
