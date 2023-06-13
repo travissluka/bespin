@@ -6,7 +6,8 @@
 import click
 
 from bespin import BinnedStatistics, Dimension, Diagnostic, Filter
-import bespin.io.obs_ioda as obsio
+# import bespin.io.obs_ioda as obsio
+import bespin.io.obs_netcdf as obsio
 
 
 @click.command(name='bin')
@@ -72,10 +73,11 @@ def bin_(obs_files, config, filters, variables, diagnostics, bins,
     combination of available options, or by passing a yaml file configuration
     with the --config option.
     """
-    # make sure ioda is present
-    if not obsio.ioda_found:
-        raise ModuleNotFoundError(
-            "Cannot bin obs statistics if IODA library is not present.")
+
+    # # make sure ioda is present
+    # if not obsio.ioda_found:
+    #     raise ModuleNotFoundError(
+    #         "Cannot bin obs statistics if IODA library is not present.")
 
     # check validity of input file names
     if len(obs_files) > len(set(obs_files)):
@@ -94,7 +96,6 @@ def bin_(obs_files, config, filters, variables, diagnostics, bins,
     # open each file, bin it, and merge all the results
     data: BinnedStatistics = None
     for obs_file in obs_files:
-        print(f'processing {obs_file}')
         unbinned_data = obsio.read(obs_file)
 
         # if no variables were listed, by default use everything within one

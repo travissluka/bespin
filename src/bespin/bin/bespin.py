@@ -15,7 +15,7 @@ from .merge import merge
 def cli():
     """Binned Experiment Statistics Package for INtegrated diagnostics.
 
-    Joint Center for Satellite Data Assimilation (JCSDA) ©2021
+    Joint Center for Satellite Data Assimilation (JCSDA) ©2022
 
     Tools for binning JEDI observation diagnostics and manipulating
     those resulting binned statistics files.

@@ -2,7 +2,6 @@ import setuptools  # type: ignore
 
 setuptools.setup(
     name="bespin",
-    version="0.0.1",
     author="JCSDA",
     description="Binned Error Statistics Package for INtegrated diagnostics",
     url="https://github.com/jcsda-internal/bespin",
@@ -15,6 +14,10 @@ setuptools.setup(
         'Natural Language :: English',
         "Operating System :: OS Independent",
     ],
+    setup_requires=["setuptools-git-versioning"],
+    setuptools_git_versioning={
+        "enabled": True,
+    },
     install_requires=[
         'click',
         'netcdf4',
