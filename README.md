@@ -2,20 +2,14 @@
 
 **B**inned **E**xperiment **S**tatistics **P**ackage for **In**tegrated Diagnostics
 
-[![Build Status](https://app.travis-ci.com/JCSDA-internal/bespin.svg?token=Vu1Csdj6JEdxNw6xXKz8&branch=develop)](https://app.travis-ci.com/JCSDA-internal/bespin)
+Handles statistical binning of IODA formatted JEDI files
 
 ## Installation
 
-Assuming you already have your own python virtual env or conda environment setup:
-
-```bash
-pip install -e .
-```
-
-will install the API and `bespin` executables.
+You probably want to install BESPIN alongside [PADME](https://github.com/travisslukla/padme) (which does the plotting of bespin files). See [https://github.com/travisslukla/padme](https://github.com/travisslukla/padme) for installation instructions.
 
 ## Usage
 
-*documentation is forthcoming*
+*documentation is "forthcoming"*
 
 See `bespin --help` for how to use the binning / merging / concatenation tool.
